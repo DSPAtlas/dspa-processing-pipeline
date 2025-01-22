@@ -1,0 +1,37 @@
+# params.yaml
+group_id: ""
+experiment_id: [""]
+input_file: ""
+input_file_tryptic_control: null
+treatment: ""
+output_dir: "./preprocessed"
+ref_condition: "CTR"
+taxonomy_id: 
+comparison: [""]
+
+
+ # Perturbations: "Small molecule", "Environmental Stress", "Metabolic perturbation - Different carbon sources" 
+ # "Genetic perturbation" "Catabolic limitation" "Anabolic limitation", ...
+ perturbation: ""
+ condition: ""
+ organism: ""
+ strain: ""
+ instrument: ""
+ n_files: null
+ n_files_trp: null
+ experiment: "" # "treated lysate"
+ reference_to_protocol: ""
+ publication: ""
+ doi: ""
+ search_settings: "default"
+ fasta: ""
+ data_reanalysis_settings: ""
+ path_to_raw_files: ""
+ raw_file_name: [""]
+ digestion_protocol: ""
+ e_s_ratio: ""
+ pk_digestion_time: null
+ protease: ""
+ replicate_number: null
+ replicate_type: # "B" for biological, "T" for technical 
+ author: ""

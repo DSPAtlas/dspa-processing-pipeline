@@ -1,8 +1,0 @@
-# params.yaml
-experiment_id: "LIP00008"
-input_file: "data/mduennebacke_Report_MD.tsv"
-treatment: "control"
-dose: 50
-output_dir: "/preprocessed"
-ref_condition: "CTR"
-comparison: "Aza_1_vs_DMSO_1"
