@@ -118,7 +118,7 @@ df %<>%
   dplyr::filter(intensity_log2 > 10) %>% 
   dplyr::rowwise() %>% 
   dplyr::mutate(pg_protein_accessions2 = ifelse(base::grepl(";", pg_protein_accessions, fixed = FALSE), 
-    base::sort(base::strsplit(pg_protein_accessions, ";", fixed = TRUE)[[1]])[1], pg_protein_accessions)) %>% 
+                                                base::sort(base::strsplit(pg_protein_accessions, ";", fixed = TRUE)[[1]])[1], pg_protein_accessions)) %>% 
   dplyr::ungroup()
 
 df$fg_id <- paste0(df$fg_labeled_sequence, df$fg_charge)
@@ -346,7 +346,7 @@ if (!is.null(input_file_tryptic_control)) {
     dplyr::filter(intensity_log2 > 10) %>% 
     dplyr::rowwise() %>% 
     dplyr::mutate(pg_protein_accessions2 = ifelse(base::grepl(";", pg_protein_accessions, fixed = FALSE), 
-      base::sort(base::strsplit(pg_protein_accessions, ";", fixed = TRUE)[[1]])[1], pg_protein_accessions)) %>% 
+                                                  base::sort(base::strsplit(pg_protein_accessions, ";", fixed = TRUE)[[1]])[1], pg_protein_accessions)) %>% 
     dplyr::ungroup() %>% 
     dplyr::mutate(normalised_intensity = 2^normalised_intensity_log2)
   
@@ -354,7 +354,7 @@ if (!is.null(input_file_tryptic_control)) {
   
   # Fetch UniProt annotations for tryptic control
   unis_tryptic <- unique(df_tryptic$pg_protein_accessions2)
-
+  
   ## Load data from uniprot and join with DIA dataframe
   uniprot_tryptic <-
     protti::fetch_uniprot(
@@ -438,7 +438,7 @@ if (!is.null(input_file_tryptic_control)) {
   
   # Save preprocessed tryptic control data
   write.table(df_tryptic, file.path(group_folder_path, "tryptic_control_clean.tsv"), sep = "\t", row.names= FALSE, quote = FALSE)
-
+  
   # calculate protein abundance
   df_tryptic %<>% calculate_protein_abundance(
     sample = r_file_name,
@@ -505,16 +505,16 @@ for (i in seq_along(comparisons)) {
                                 "normalised_intensity_log2", 
                                 "go_f", "start", "end")))%>%
     protti::calculate_diff_abundance(
-    sample = r_file_name,
-    condition = r_condition,
-    grouping = eg_modified_peptide,
-    intensity_log2 = normalised_intensity_log2,
-    missingness = missingness,
-    comparison = comparison,
-    method = "t-test",
-    retain_columns = all_of(c("pg_protein_accessions", "eg_modified_peptide", 
-                              "comparison", "go_f", "start", "end"))
-  )
+      sample = r_file_name,
+      condition = r_condition,
+      grouping = eg_modified_peptide,
+      intensity_log2 = normalised_intensity_log2,
+      missingness = missingness,
+      comparison = comparison,
+      method = "t-test",
+      retain_columns = all_of(c("pg_protein_accessions", "eg_modified_peptide", 
+                                "comparison", "go_f", "start", "end"))
+    )
   
   if (!is.null(input_file_tryptic_control)) {
     df_trp_filtered <- df_trp %>%
@@ -546,7 +546,7 @@ for (i in seq_along(comparisons)) {
       dplyr::mutate(gene = sort(strsplit(gene_names, " ", fixed = TRUE)[[1]])[1]) %>% 
       ungroup() %>% 
       dplyr::mutate(significant = TRUE)
-
+    
     df_trp_filtered_diff %<>%
       left_join(distinct(Trp_candidates, pg_protein_accessions2, significant, gene), by = "pg_protein_accessions2") %>% 
       left_join(dplyr::distinct(tryptic_protein_abundance, pg_protein_accessions2, gene_names), by = "pg_protein_accessions2")
@@ -577,7 +577,7 @@ for (i in seq_along(comparisons)) {
       retain_columns = all_of(c("missingness", "go_f")),
       method = "satterthwaite"
     )
-
+    
     # bug: output some important plots to pdf and results to the log file: 
     candidates <- df_diff %>% 
       dplyr::filter(adj_pval < 0.05 & abs(adj_diff) > 1) %>% 
@@ -590,102 +590,27 @@ for (i in seq_along(comparisons)) {
     
     df_diff %<>%
       left_join(distinct(candidates, eg_modified_peptide, start, end, label, coverage, length, significant), by = "eg_modified_peptide") 
-      
-    # Save Differential Abundance results
-    corrected_file <- file.path(
-      group_folder_path, 
-      paste0("differential_abundance_", experiment_id, "_", comparison_filter, ".tsv")
-    )
-    write.table(df_diff, corrected_file, sep = "\t", row.names= FALSE, quote = FALSE)
   
-  } else {
     
-    ## LiP analysis only when no TrP control
-    candidates <- df_diff %>% 
-      dplyr::filter(adj_pval < 0.05 & abs(diff) > 1) %>% 
-      left_join(dplyr::distinct(DIA_clean_uniprot, pg_protein_accessions, gene_names), by = "pg_protein_accessions") %>% 
-      rowwise() %>% 
-      dplyr::mutate(gene = sort(strsplit(gene_names, " ", fixed = TRUE)[[1]])[1]) %>% 
-      ungroup() %>% 
-      dplyr::mutate(label = paste(gene, "@", start, "-", end, sep = "")) %>% 
-      dplyr::mutate(significant = TRUE)
-    
-    df_diff %<>%
-      left_join(distinct(candidates, eg_modified_peptide, label, significant), by = "eg_modified_peptide") %>% 
-      left_join(dplyr::distinct(pg_protein_accessions, gene_names, sequence, length, coverage), by = "pg_protein_accessions") %>% 
-      rowwise() %>% 
-      dplyr::mutate(gene = sort(strsplit(gene_names, " ", fixed = TRUE)[[1]])[1]) 
-    
-    # Save Differential Abundance results
-    diff_abundance_file <- file.path(
-      group_folder_path, 
-      paste0("differential_abundance_", experiment_id, "_", comparison_filter, ".tsv")
-    )
-    write.table(df_diff, diff_abundance_file, sep = "\t", row.names= FALSE, quote = FALSE)
-    
-    
-  }
-  # plot the profile plots for the candidates: 
-  candidate_summed <- df_diff %>% 
-    dplyr::filter(pg_protein_accessions %in% sort(unique(candidates$pg_protein_accessions))) %>% 
-    left_join(distinct(DIA_clean, r_file_name, condrep), by = "r_file_name") %>% 
-    left_join(distinct(candidates, eg_modified_peptide, significant), by = "eg_modified_peptide") %>% 
-    dplyr::mutate(significant = ifelse(is.na(significant), FALSE, significant)) %>% 
-    dplyr::mutate(line_type = ifelse(significant == TRUE, 'solid', 'dotted'))
+  } 
   
-  peptide_profile_plot <- protti::peptide_profile_plot(
-    data = candidate_summed,
-    sample = condrep,
-    peptide = eg_modified_peptide,
-    intensity_log2 = normalised_intensity_log2,
-    grouping = pg_protein_accessions,
-    targets = sort(unique(candidates$pg_protein_accessions)),
-    protein_abundance_plot = FALSE
-  ) 
-  
-  output_profile_pdf <- file.path(group_folder_path, 
-                                  paste0("candidates_profile_plots_", experiment_id, "_", comparison_filter, ".pdf"))
-  ggsave(
-    filename = output_profile_pdf, 
-    plot = marrangeGrob(peptide_profile_plot, nrow=1, ncol=1), 
-    width = 8, height = 6
-  )
-  
-  woods_plot <- protti::woods_plot(
-    data = df_diff,
-    fold_change = adj_diff,
-    start_position = start,
-    end_position = end,
-    protein_length = length,
-    coverage = coverage,
-    colouring = adj_pval,
-    protein_id = pg_protein_accessions,
-    targets = sort(unique(candidates$pg_protein_accessions)), 
-    facet = FALSE,
-    fold_change_cutoff = 1,
-    highlight = significant
-  )
-  
-  output_woods_pdf <- file.path(
+  diff_abundance_file <- file.path(
     group_folder_path, 
-    paste0("LiP_corrected_candidates_woods_plots_", experiment_id, "_", comparison_filter, ".pdf"))
-  ggsave(
-    filename = output_woods_pdf, 
-    plot = marrangeGrob(woods_plot, nrow=1, ncol=1), 
-    width = 8, height = 6
+    paste0("differential_abundance_", experiment_id, "_", comparison_filter, ".tsv")
   )
+  write.table(df_diff, diff_abundance_file, sep = "\t", row.names= FALSE, quote = FALSE)
+  
   
   tryCatch({
     df_go_term <- df_diff %>%
-      dplyr::mutate(significant = ifelse(!is.na(adj_pval) & adj_pval < 0.05, TRUE, FALSE)) 
+      dplyr::mutate(significant = ifelse(!is.na(adj_pval) & adj_pval < 0.05, TRUE, FALSE)) %>%
       protti::calculate_go_enrichment(
-      data = corrected_significant,
-      protein_id = pg_protein_accessions,
-      go_annotations_uniprot = go_f,
-      is_significant = significant,
-      min_n_detected_proteins_in_process = 3,
-      plot = FALSE
-    )
+        protein_id = pg_protein_accessions,
+        go_annotations_uniprot = go_f,
+        is_significant = significant,
+        min_n_detected_proteins_in_process = 3,
+        plot = FALSE
+      )
     
     # Save GO Term enrichment results
     go_term_file <- file.path(group_folder_path, paste0("go_term_", experiment_id, "_", comparison_filter, ".tsv"))
