@@ -102,7 +102,7 @@ plot_list[[2]] <- protti::qc_ids(
 # Normalize
 # ------------------------------------------------------------------------------
 
-file <- protti::normalise(
+df <- protti::normalise(
   df,
   sample = r_file_name,
   intensity_log2 = intensity_log2,
