@@ -1,44 +1,52 @@
 # params.yaml
-group_id: "" # "GRP000001"
-experiment_id: 
- -"" # "LIP000001"
-input_file: ""
-input_file_tryptic_control: null
-treatment: ""
+group_id: "PXD006543_Ilaria_FBP" # ids are getting automatically created by database
+dpx_comparison: 
+  - "1"
+  - "2"
+input_file: "G:/Biognosys/Spectronaut/results/20250124_151217_PXD006543_Ilaria1_FBP/PXD006543_Ilaria1_FBP_Report_dynaprot_schema (Normal).tsv"
+input_file_tryptic_control: NULL
+treatment: "Fructose 1,6-bisphosphate (FBP)"
 output_dir: "./preprocessed"
-ref_condition: "CTR"
-ref_condition_trp: " " #  CTR_TrP  
-taxonomy_id: 
+ref_condition: "CTR_LiP"
+ref_condition_trp: ""
+taxonomy_id: 562
 comparison: 
- -"" # "Rapa_LiP_vs_CTR_LiP"
-files_to_remove: 
- -"" 
-
-
+  - "FBP_1mM_vs_CTR_LiP"
+  - "FBP_25mM_vs_CTR_LiP"
+files_to_remove: NULL
  # Perturbations: "Small molecule", "Environmental Stress", "Metabolic perturbation - Different carbon sources" 
  # "Genetic perturbation" "Catabolic limitation" "Anabolic limitation", ...
- perturbation: ""
- condition: ""
- organism: ""
- strain: ""
- instrument: "" # FULL NAME!
- n_files: null
- n_files_trp: null
- experiment: "" # "treated lysate"
- reference_to_protocol: ""
- publication: "" # full publucation name
- doi: ""
- search_settings: "default"
- fasta: ""
- data_reanalysis_settings: ""
- path_to_raw_files: ""
- raw_file_name: 
-  - ""
- digestion_protocol: ""
- e_s_ratio: ""
- pk_digestion_time: null
- protease: "" # Proteinase K
- replicate_number: null
- replicate_type: # "B" for biological, "T" for technical 
- author: "" # Full name
- 
+perturbation: "Small Molecule"
+condition: "Fructose 1,6-bisphosphate (FBP)"
+organism: "Escherichia coli"
+strain: "K12"
+instrument: "Q Exactive™ Plus Hybrid Quadrupole-Orbitrap™ Mass Spectrometer"
+n_files: 10
+n_files_trp: 0
+experiment: "Treated lysate" # "treated lysate"
+reference_to_protocol: "Piazza et al., 2018"
+publication: "Piazza I, Kochanowski K, Cappelletti V, Fuhrer T, Noor E, Sauer U, Picotti P. A Map of Protein-Metabolite Interactions Reveals Principles of Chemical Communication. Cell. 2018 Jan 11;172(1-2):358-372.e23. doi: 10.1016/j.cell.2017.12.006. Epub 2018 Jan 4. PMID: 29307493.."
+doi: "https://doi.org/10.1016/j.cell.2017.12.006"
+search_settings: "default"
+fasta: "562"
+data_reanalysis_settings: "DA"
+path_to_raw_files: "Y:/LiP-Atlas/data/PXD006543_Ilaria1/raw_files"
+raw_file_name: 
+  - "151021_IP561_DIA.raw"
+  - "151021_IP562_DIA.raw"
+  - "151022_IP563_DIA.raw"
+  - "151022_IP564_DIA.raw"
+  - "151022_IP565_DIA.raw"
+  - "151022_IP566_DIA.raw"
+  - "151021_IP568_DIA.raw"
+  - "151021_IP569_DIA.raw"
+  - "151021_IP570_DIA.raw"
+  - "151021_IP571_DIA.raw"
+digestion_protocol: "LiP"
+e_s_ratio: "1:100"
+pk_digestion_time: 300
+protease: "Proteinase K"
+replicate_number: 3
+replicate_type: "B" # "B" for biological, "T" for technical 
+author: "Ilaria Piazza"
+experiment_name: "PXD006543_Ilaria_FBP"

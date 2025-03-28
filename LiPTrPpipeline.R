@@ -3,6 +3,7 @@
 
 # LiP MS pipeline
 # with optional Tryptic control
+closeAllConnections()
 
 library(yaml)
 library(protti)
@@ -22,13 +23,13 @@ registerDoParallel(cores = 10)
 args <- commandArgs(trailingOnly = TRUE)
 # Expect the first argument to be the path to the YAML file
 yaml_file <- args[1]
-params <- yaml::read_yaml(yaml_file)
+params <- yaml::read_yaml(file=yaml_file)
 
 # Access the parameters
 group_id <- params$group_id
 input_file <- params$input_file
 input_file_tryptic_control <- params$input_file_tryptic_control
-experiment_ids <- params$experiment_id
+experiment_ids <- params$dpx_comparison
 treatment <- params$treatment
 ref_condition <- params$ref_condition
 comparisons <- params$comparison
@@ -299,7 +300,7 @@ if (!is.null(input_file_tryptic_control)) {
   
   input_file_tryptic_control <- params$input_file_tryptic_control
   df_tryptic <- protti::read_protti(input_file_tryptic_control)
-  df_tryptic$intensity_log2 <- log2(df_tryptica$fg_ms2raw_quantity)
+  df_tryptic$intensity_log2 <- log2(df_tryptic$fg_ms2raw_quantity)
   df_tryptic$condrep <- paste(df_tryptic$r_condition, df_tryptic$r_replicate, sep = "_")
   
   # make the QC plots as for LiP
@@ -626,5 +627,5 @@ for (i in seq_along(comparisons)) {
 yaml_file_path <- file.path(group_folder_path, "params.yaml")
 file.copy(yaml_file, yaml_file_path)
 
-# Stop redirecting output to the log file
-sink()
+if (sink.number() > 0) sink(NULL)
+closeAllConnections()

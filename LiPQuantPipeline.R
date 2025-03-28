@@ -1,6 +1,6 @@
 
 # LiPQuant pipeline
-
+closeAllConnections()
 library(yaml)
 library(protti)
 library(tidyr)
@@ -18,12 +18,12 @@ registerDoParallel(cores = 10)
 args <- commandArgs(trailingOnly = TRUE)
 # Expect the first argument to be the path to the YAML file
 yaml_file <- args[1]
-params <- yaml::read_yaml(yaml_file)
+params <- yaml::read_yaml(file=yaml_file)
 
 group_id <- params$group_id
 input_file <- params$input_file
 input_file_tryptic_control <- params$input_file_tryptic_control
-experiment_ids <- params$experiment_id
+experiment_ids <- params$dpx_comparison
 treatment <- params$treatment
 ref_condition <- params$ref_condition
 comparisons <- params$comparison
@@ -153,15 +153,18 @@ uniprot <-
   ) 
 
 df %<>%
-  left_join(uniprot, by = c("pg_protein_accessions2" = "accession")) %>% 
+  left_join(uniprot, by = c("pg_protein_accessions" = "accession")) %>% 
   find_peptide(sequence, pep_stripped_sequence) %>%
   assign_peptide_type(aa_before, last_aa, aa_after) %>%
   distinct() %>% 
-  calculate_sequence_coverage(protein_sequence = sequence, peptides = pep_stripped_sequence) %>% 
-  dplyr::mutate(normalised_intensity = 2^normalised_intensity_log2)
 
 df %<>% 
-  distinct(r_file_name, fg_id, normalised_intensity_log2, eg_modified_peptide, pep_stripped_sequence, pg_protein_accessions, gene_names, go_f, r_condition, start, end) %>% 
+  calculate_sequence_coverage(protein_sequence = sequence, peptides = pep_stripped_sequence) %>% 
+  
+df %>%  dplyr::mutate(normalised_intensity = 2^normalised_intensity_log2)
+
+df %<>% 
+  #distinct(r_file_name, fg_id, normalised_intensity_log2, eg_modified_peptide, pep_stripped_sequence, pg_protein_accessions, gene_names, go_f, r_condition, start, end) %>% 
   tidyr::complete(nesting(r_file_name, r_condition), nesting(pg_protein_accessions, gene_names, go_f, fg_id, eg_modified_peptide, pep_stripped_sequence, start, end))
 
 plot_list[[5]] <- protti::qc_cvs(
@@ -463,7 +466,7 @@ for (i in seq_along(comparisons)) {
 # Adding dose-response analysis using `parallel_fit_drc_4p`
 
 # Ensure a numeric concentration column exists for dose-response fitting
-file$conc_frag <- as.numeric(gsub("_mM", "", file$r_condition))
+df$conc_frag <- as.numeric(gsub("_mM", "", df$r_condition))
 
 # Perform parallel dose-response fitting
 lipquant_results <- protti::parallel_fit_drc_4p(
@@ -504,4 +507,5 @@ yaml_file_path <- file.path(group_folder_path, "params.yaml")
 file.copy(yaml_file, yaml_file_path)
 
 # Stop redirecting output to the log file
-sink()
+if (sink.number() > 0) sink(NULL)
+closeAllConnections()
