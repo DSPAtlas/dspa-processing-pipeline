@@ -226,12 +226,16 @@ df %<>%
   distinct(r_file_name, fg_id, normalised_intensity_log2, eg_modified_peptide, pep_stripped_sequence, pg_protein_accessions, gene_names, go_f, r_condition, start, end) %>% 
   tidyr::complete(nesting(r_file_name, r_condition), nesting(pg_protein_accessions, gene_names, go_f, fg_id, eg_modified_peptide, pep_stripped_sequence, start, end))
 
+df <- df %>%
+  mutate(imputed = if_else(is.na(normalised_intensity_log2), TRUE, FALSE))
+
 df %<>% impute_randomforest(
   sample = r_file_name,
   grouping = fg_id,
   intensity_log2 = normalised_intensity_log2,
   retain_columns = c("eg_modified_peptide", "pep_stripped_sequence", "pg_protein_accessions",
-                     "gene_names", "go_f", "r_condition", "start", "end"),
+                     "gene_names", "go_f", "r_condition", "start", "end", "imputed",
+                     "coverage", "length", "pg_protein_accessions2"),
   parallelize = "variables"
 )
 
@@ -240,16 +244,9 @@ write.table(df, imputed_file, sep = "\t", row.names= FALSE, quote = FALSE)
 save.image("./all_data.RData")
 
 plot_list[[12]] <- df %>%
-  dplyr::rename(imputed_intensity_log2 = normalised_intensity_log2) %>% 
-  left_join(distinct(DIA_clean_uniprot_complete, r_file_name, fg_id, normalised_intensity_log2), by = c("r_file_name", "fg_id")) %>% 
-  dplyr::select(imputed_intensity_log2, normalised_intensity_log2) %>%
-  pivot_longer(cols = everything(),
-               names_to = "imputed",
-               values_to = "intensity") %>%
-  dplyr::filter(!is.na(intensity)) %>%
-  dplyr::mutate(imputed = factor(imputed, levels = c("imputed_intensity_log2", "normalised_intensity_log2"))) %>% 
-  ggplot(aes(intensity, fill = imputed)) +
-  labs(title = "Histogram of intensities before and after imputation (Log2)",
+  dplyr::mutate(imputed = factor(imputed, levels = c(TRUE, FALSE), labels = c("Imputed", "Observed"))) %>%
+  ggplot(aes(x = normalised_intensity_log2, fill = imputed)) +
+  labs(title = "Histogram of Intensities Before and After Imputation (Log2)",
        x = "Log2 Intensity",
        y = "Frequency",
        fill = "Type") +
@@ -258,9 +255,10 @@ plot_list[[12]] <- df %>%
     color = "black",
     position = "identity"
   ) +
-  scale_fill_manual(values = protti_colours[c(2,1)]) +
+  scale_fill_manual(values = protti_colours[c(2, 1)]) +
   theme_bw() + 
   coord_cartesian(xlim = c(5, 30))
+
 
 # sum up precursors to peptide level and keep only one entry per pep_stripped_sequence
 df %<>% protti::calculate_protein_abundance(
@@ -359,7 +357,7 @@ if (!is.null(input_file_tryptic_control)) {
   ## Load data from uniprot and join with DIA dataframe
   uniprot_tryptic <-
     protti::fetch_uniprot(
-      df_tryptic,
+     unis_tryptic,
       columns =  c(
         "protein_name",
         "gene_names",
@@ -377,7 +375,8 @@ if (!is.null(input_file_tryptic_control)) {
     find_peptide(sequence, pep_stripped_sequence) %>%
     assign_peptide_type(aa_before, last_aa, aa_after) %>%
     distinct() %>% 
-    calculate_sequence_coverage(protein_sequence = sequence, peptides = pep_stripped_sequence)
+    calculate_sequence_coverage(protein_sequence = sequence, peptides = pep_stripped_sequence) %>%
+    mutate(condrep = paste(r_condition, r_replicate, sep = "_"))
   
   plot_list2[[5]] <- protti::qc_cvs(
     data = df_tryptic,
@@ -434,8 +433,12 @@ if (!is.null(input_file_tryptic_control)) {
   ) + ggtitle('Tryptic control: intensity of half tryptics')
   
   df_tryptic %<>%
-    distinct(r_file_name, fg_id, normalised_intensity_log2, eg_modified_peptide, pep_stripped_sequence, pg_protein_accessions, pg_protein_accessions2, gene_names, go_f, r_condition, start, end) %>% 
-    tidyr::complete(nesting(r_file_name, r_condition), nesting(pg_protein_accessions, pg_protein_accessions2, gene_names, go_f, fg_id, eg_modified_peptide, pep_stripped_sequence, start, end))
+    distinct(r_file_name, fg_id, normalised_intensity_log2, eg_modified_peptide, pep_stripped_sequence, pg_protein_accessions, pg_protein_accessions2, gene_names, go_f, r_condition, start, end, condrep) %>% 
+    tidyr::complete(
+      nesting(r_file_name, r_condition, condrep), 
+      nesting(pg_protein_accessions, pg_protein_accessions2, gene_names, go_f, fg_id, eg_modified_peptide, pep_stripped_sequence, start, end)
+    )
+  
   
   # Save preprocessed tryptic control data
   write.table(df_tryptic, file.path(group_folder_path, "tryptic_control_clean.tsv"), sep = "\t", row.names= FALSE, quote = FALSE)
@@ -502,8 +505,8 @@ for (i in seq_along(comparisons)) {
       grouping = eg_modified_peptide,
       intensity = normalised_intensity_log2,
       ref_condition = ref_condition,
-      retain_columns = all_of(c("pg_protein_accessions", "r_file_name", "r_condition", 
-                                "normalised_intensity_log2", 
+      retain_columns = all_of(c("pg_protein_accessions","r_file_name", "r_condition", 
+                                "normalised_intensity_log2", "gene_names",
                                 "go_f", "start", "end")))%>%
     protti::calculate_diff_abundance(
       sample = r_file_name,
@@ -513,13 +516,19 @@ for (i in seq_along(comparisons)) {
       missingness = missingness,
       comparison = comparison,
       method = "t-test",
-      retain_columns = all_of(c("pg_protein_accessions", "eg_modified_peptide", 
+      retain_columns = all_of(c("pg_protein_accessions","eg_modified_peptide", 
+                                "gene_names",
                                 "comparison", "go_f", "start", "end"))
     )
   
+
   if (!is.null(input_file_tryptic_control)) {
-    df_trp_filtered <- df_trp %>%
-      dplyr::filter(r_condition %in% comparison_parts)
+    ref_condition_tryptic <- params$ref_condition_trp
+    comparison_parts_tryptic <- strsplit(comparison_filter, "_vs_")[[1]] 
+    comparison_parts_tryptic <- gsub("LiP", "TrP", comparison_parts_tryptic)
+    
+    df_trp_filtered <- df_tryptic %>%
+      dplyr::filter(r_condition %in% comparison_parts_tryptic)
     
     df_trp_filtered_diff <- df_trp_filtered  %>%
       assign_missingness(
@@ -527,7 +536,7 @@ for (i in seq_along(comparisons)) {
         condition = r_condition,
         intensity = normalised_intensity_log2,
         grouping = pg_protein_accessions,
-        ref_condition = "CTR_Trp",
+        ref_condition = ref_condition_tryptic,
         retain_columns = all_of(c("pg_protein_accessions2"))
       ) %>%
       calculate_diff_abundance(
@@ -542,15 +551,19 @@ for (i in seq_along(comparisons)) {
     
     Trp_candidates <- df_trp_filtered_diff %>% 
       dplyr::filter(adj_pval < 0.05 & abs(diff) > 1) %>% 
-      left_join(dplyr::distinct(tryptic_protein_abundance, pg_protein_accessions2, gene_names), by = "pg_protein_accessions2") %>% 
+      left_join(dplyr::distinct(df_tryptic, pg_protein_accessions2, gene_names), by = "pg_protein_accessions2") %>% 
       rowwise() %>% 
-      dplyr::mutate(gene = sort(strsplit(gene_names, " ", fixed = TRUE)[[1]])[1]) %>% 
+      dplyr::mutate(gene = ifelse(
+        is.na(gene_names) | gene_names == "", 
+        NA_character_, 
+        sort(strsplit(gene_names, " ", fixed = TRUE)[[1]])[1]
+      )) %>% 
       ungroup() %>% 
       dplyr::mutate(significant = TRUE)
     
     df_trp_filtered_diff %<>%
       left_join(distinct(Trp_candidates, pg_protein_accessions2, significant, gene), by = "pg_protein_accessions2") %>% 
-      left_join(dplyr::distinct(tryptic_protein_abundance, pg_protein_accessions2, gene_names), by = "pg_protein_accessions2")
+      left_join(dplyr::distinct(df_tryptic, pg_protein_accessions2, gene_names), by = "pg_protein_accessions2")
     
     # Save Differential Abundance results
     diff_trp_file_path <- file.path(
@@ -565,7 +578,7 @@ for (i in seq_along(comparisons)) {
       dplyr::mutate(comparison = gsub("_Trp", "_LiP", x = comparison, fixed = TRUE)) %>% 
       ungroup()
     
-    df_diff<- correct_lip_for_abundance(
+    df_diff_corrected <- correct_lip_for_abundance(
       lip_data = df_diff,
       trp_data =  df_trp_filtered_diff,
       protein_id = pg_protein_accessions,
@@ -579,19 +592,18 @@ for (i in seq_along(comparisons)) {
       method = "satterthwaite"
     )
     
-    # bug: output some important plots to pdf and results to the log file: 
     candidates <- df_diff %>% 
       dplyr::filter(adj_pval < 0.05 & abs(adj_diff) > 1) %>% 
-      left_join(dplyr::distinct(DIA_clean_uniprot, eg_modified_peptide, pg_protein_accessions2, gene_names, coverage, length, start, end), by = "eg_modified_peptide") %>% 
+      left_join(dplyr::distinct(df, eg_modified_peptide, pg_protein_accessions2, gene_names, coverage, length, start, end), by = "eg_modified_peptide") %>% 
       rowwise() %>% 
       dplyr::mutate(gene = sort(strsplit(gene_names, " ", fixed = TRUE)[[1]])[1]) %>% 
       ungroup() %>% 
       dplyr::mutate(label = paste(gene, "@", start, "-", end, sep = "")) %>% 
       dplyr::mutate(significant = TRUE)
     
+    
     df_diff %<>%
       left_join(distinct(candidates, eg_modified_peptide, start, end, label, coverage, length, significant), by = "eg_modified_peptide") 
-  
     
   } 
   
@@ -604,7 +616,20 @@ for (i in seq_along(comparisons)) {
   
   tryCatch({
     df_go_term <- df_diff %>%
+      # Step 1: Mark significant rows
       dplyr::mutate(significant = ifelse(!is.na(adj_pval) & adj_pval < 0.05, TRUE, FALSE)) %>%
+      # Step 2: Clean up the go_f column by removing NA and empty strings
+      dplyr::filter(!is.na(go_f) & go_f != "") %>%
+      # Step 3: Split concatenated GO terms and unnest into multiple rows
+      dplyr::mutate(go_f = strsplit(go_f, ";")) %>%
+      tidyr::unnest(go_f) %>%
+      # Step 4: Ensure valid GO ID format (activity [GO:1234567])
+      dplyr::filter(stringr::str_detect(go_f, "\\[GO:\\d+\\]")) %>%
+      # Step 5: Remove problematic GO terms with fewer than 2 unique significant states
+      dplyr::group_by(go_f) %>%
+      dplyr::filter(n_distinct(significant) > 1) %>%
+      dplyr::ungroup() %>%
+      # Step 6: Calculate GO enrichment
       protti::calculate_go_enrichment(
         protein_id = pg_protein_accessions,
         go_annotations_uniprot = go_f,
@@ -612,6 +637,8 @@ for (i in seq_along(comparisons)) {
         min_n_detected_proteins_in_process = 3,
         plot = FALSE
       )
+    
+    
     
     # Save GO Term enrichment results
     go_term_file <- file.path(group_folder_path, paste0("go_term_", experiment_id, "_", comparison_filter, ".tsv"))

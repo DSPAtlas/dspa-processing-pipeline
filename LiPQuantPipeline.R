@@ -70,8 +70,14 @@ plot_list2 <- list()
 plot_list3 <- list()
 plot_list4 <- list()
 
-# load file
-df <- read_protti(input_file)
+# load file2
+read_protti2 <-
+  function(filename, ...) {
+    data.table::fread(file=filename, ...) %>%
+      janitor::clean_names() %>%
+      tibble::as_tibble()
+  }
+df <- read_protti2(filename=input_file)
 
 # ------------------------------------------------------------------------------
 # Preprocessing 
@@ -130,7 +136,7 @@ df %<>%
   dplyr::filter(intensity_log2 > 10) %>% 
   dplyr::rowwise() %>% 
   dplyr::mutate(pg_protein_accessions2 = ifelse(base::grepl(";", pg_protein_accessions, fixed = FALSE), 
-      base::sort(base::strsplit(pg_protein_accessions, ";", fixed = TRUE)[[1]])[1], pg_protein_accessions)) %>% 
+                                                base::sort(base::strsplit(pg_protein_accessions, ";", fixed = TRUE)[[1]])[1], pg_protein_accessions)) %>% 
   dplyr::ungroup()
 
 df$fg_id <- paste0(df$fg_labeled_sequence, df$fg_charge)
@@ -154,17 +160,16 @@ uniprot <-
 
 df %<>%
   left_join(uniprot, by = c("pg_protein_accessions" = "accession")) %>% 
+  dplyr::mutate(normalised_intensity = 2^normalised_intensity_log2) %>%
   find_peptide(sequence, pep_stripped_sequence) %>%
   assign_peptide_type(aa_before, last_aa, aa_after) %>%
-  distinct() %>% 
+  distinct() 
+df %<>%
+  calculate_sequence_coverage(protein_sequence = sequence, peptides = pep_stripped_sequence) 
 
-df %<>% 
-  calculate_sequence_coverage(protein_sequence = sequence, peptides = pep_stripped_sequence) %>% 
-  
-df %>%  dplyr::mutate(normalised_intensity = 2^normalised_intensity_log2)
 
-df %<>% 
-  #distinct(r_file_name, fg_id, normalised_intensity_log2, eg_modified_peptide, pep_stripped_sequence, pg_protein_accessions, gene_names, go_f, r_condition, start, end) %>% 
+
+df %>% 
   tidyr::complete(nesting(r_file_name, r_condition), nesting(pg_protein_accessions, gene_names, go_f, fg_id, eg_modified_peptide, pep_stripped_sequence, start, end))
 
 plot_list[[5]] <- protti::qc_cvs(
@@ -244,28 +249,26 @@ plot_list[[11]] <- protti::qc_sample_correlation(
 # Impute
 # ------------------------------------------------------------------------------
 
+
+# Assuming your data frame is called df
+df <- df %>%
+  mutate(imputed = if_else(is.na(normalised_intensity_log2), TRUE, FALSE))
+
 df <- impute_randomforest(
   df,
   sample = r_file_name,
   grouping = fg_id,
   intensity_log2 = normalised_intensity_log2,
   retain_columns = c("eg_modified_peptide", "pep_stripped_sequence", "pg_protein_accessions", 
-                     "gene_names", "go_f", "r_condition", "start", "end"),
+                     "gene_names", "go_f", "r_condition", "start", "end", "imputed"),
   parallelize = "variables"
 )
 
 
 plot_list[[12]] <- df %>%
-  dplyr::rename(imputed_intensity_log2 = normalised_intensity_log2) %>% 
-  left_join(distinct(DIA_clean_uniprot_complete, r_file_name, fg_id, normalised_intensity_log2), by = c("r_file_name", "fg_id")) %>% 
-  dplyr::select(imputed_intensity_log2, normalised_intensity_log2) %>%
-  pivot_longer(cols = everything(),
-               names_to = "imputed",
-               values_to = "intensity") %>%
-  dplyr::filter(!is.na(intensity)) %>%
-  dplyr::mutate(imputed = factor(imputed, levels = c("imputed_intensity_log2", "normalised_intensity_log2"))) %>% 
-  ggplot(aes(intensity, fill = imputed)) +
-  labs(title = "Histogram of intensities before and after imputation (Log2)",
+  dplyr::mutate(imputed = factor(imputed, levels = c(TRUE, FALSE), labels = c("Imputed", "Observed"))) %>%
+  ggplot(aes(x = intensity_log, fill = imputed)) +
+  labs(title = "Histogram of Intensities Before and After Imputation (Log2)",
        x = "Log2 Intensity",
        y = "Frequency",
        fill = "Type") +
@@ -274,9 +277,10 @@ plot_list[[12]] <- df %>%
     color = "black",
     position = "identity"
   ) +
-  scale_fill_manual(values = protti_colours[c(2,1)]) +
+  scale_fill_manual(values = protti_colours[c(2, 1)]) +
   theme_bw() + 
   coord_cartesian(xlim = c(5, 30))
+
 
 # ------------------------------------------------------------------------------
 # Save QC plots

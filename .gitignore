@@ -4,3 +4,7 @@ data/
 .RData
 .Rhistory
 .Rproj.user/
+yamlfiles/
+lipschoolfiles/
+preprocessed/
+all_data.RData
