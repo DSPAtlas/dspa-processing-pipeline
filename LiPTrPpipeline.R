@@ -15,7 +15,7 @@ library(ggplot2)
 library(gridExtra)
 library(ggrepel)
 library(magrittr)
-
+library(purrr)
 
 registerDoParallel(cores = 10) 
 
@@ -60,7 +60,13 @@ plot_list <- list()
 plot_list2 <- list()
 
 # load file
-df <- read_protti(input_file)
+read_file <-
+  function(filename, ...) {
+    data.table::fread(file = filename, ...) %>%
+      janitor::clean_names() %>%
+      tibble::as_tibble()
+  }
+df <- read_file(input_file)
 
 # ------------------------------------------------------------------------------
 # LiP 
@@ -70,8 +76,48 @@ df <- read_protti(input_file)
 # Preprocessing 
 # ------------------------------------------------------------------------------
 
-df$intensity_log2 <- log2(df$fg_ms2raw_quantity)
-df$condrep <- paste(df$r_condition, df$r_replicate, sep = "_")
+df %<>%
+  dplyr::mutate(pg_protein_accessions_split = ifelse(base::grepl(";", pg_protein_accessions, fixed = FALSE), 
+  base::sort(base::strsplit(pg_protein_accessions, ";", fixed = TRUE)[[1]])[1], pg_protein_accessions)) %>%
+  dplyr::mutate(intensity_log2 = log2(fg_ms2raw_quantity)) %>%
+  dplyr::mutate(condrep = paste(r_condition, r_replicate, sep = "_"))
+
+ids <- df %>% dplyr::pull(pg_protein_accessions_split) %>% base::unique()
+uniprot <-
+  protti::fetch_uniprot(
+    ids,
+    columns =  c("length", "sequence") ) 
+
+# ------------------------------------------------------------------------------
+# Normalise
+# ------------------------------------------------------------------------------
+
+df %<>%
+  protti::normalise(
+    sample = r_file_name,
+    intensity_log2 = intensity_log2,
+    method = "median"
+  ) %>%
+  dplyr::left_join(
+    uniprot, 
+    by = c("pg_protein_accessions_split" = "accession")
+  ) %>%
+  protti::find_peptide(sequence, pep_stripped_sequence) %>%
+  protti::assign_peptide_type(aa_before, last_aa, aa_after) %>%
+  dplyr::distinct() %>% 
+  protti::calculate_sequence_coverage(
+    protein_sequence = sequence, 
+    peptides = pep_stripped_sequence
+    ) %>% 
+  dplyr::mutate(normalised_intensity = 2^normalised_intensity_log2) %>%
+  dplyr::mutate(imputed = if_else(is.na(intensity_log2), TRUE, FALSE)) %>%
+  dplyr::filter(intensity_log2 > 10) %>%
+  dplyr::mutate(fg_id =paste0(fg_labeled_sequence, fg_charge)) %>%
+  dplyr::mutate(normalised_intensity = 2^normalised_intensity_log2)
+
+# ------------------------------------------------------------------------------
+# Plotting
+# ------------------------------------------------------------------------------
 
 plot_list[[1]] <- protti::qc_ids(
   data = df, 
@@ -89,16 +135,6 @@ plot_list[[2]] <- protti::qc_ids(
   intensity = pg_quantity
 )+ ggtitle('Protein ID count per sample')
 
-# ------------------------------------------------------------------------------
-# Normalise
-# ------------------------------------------------------------------------------
-
-df %<>% protti::normalise(
-  sample = r_file_name,
-  intensity_log2 = intensity_log2,
-  method = "median"
-) 
-
 plot_list[[3]] <- protti::qc_intensity_distribution(
   data = df,
   sample = condrep,
@@ -114,24 +150,6 @@ plot_list[[4]] <- protti::qc_intensity_distribution(
   intensity_log2 = normalised_intensity_log2,
   plot_style = "boxplot"
 ) + ggtitle('Run intensities after normalisation')
-
-df %<>% 
-  dplyr::filter(intensity_log2 > 10) %>% 
-  dplyr::rowwise() %>% 
-  dplyr::mutate(pg_protein_accessions2 = ifelse(base::grepl(";", pg_protein_accessions, fixed = FALSE), 
-                                                base::sort(base::strsplit(pg_protein_accessions, ";", fixed = TRUE)[[1]])[1], pg_protein_accessions)) %>% 
-  dplyr::ungroup()
-
-df$fg_id <- paste0(df$fg_labeled_sequence, df$fg_charge)
-
-
-df %<>% 
-  left_join(uniprot, by = c("pg_protein_accessions2" = "accession")) %>% 
-  find_peptide(sequence, pep_stripped_sequence) %>%
-  assign_peptide_type(aa_before, last_aa, aa_after) %>%
-  distinct() %>% 
-  calculate_sequence_coverage(protein_sequence = sequence, peptides = pep_stripped_sequence) %>% 
-  dplyr::mutate(normalised_intensity = 2^normalised_intensity_log2)
 
 plot_list[[5]] <- protti::qc_cvs(
   data = df,
@@ -207,25 +225,21 @@ plot_list[[11]] <- protti::qc_sample_correlation(
 
 
 df %<>% 
-  distinct(r_file_name, fg_id, normalised_intensity_log2, eg_modified_peptide, pep_stripped_sequence, pg_protein_accessions, gene_names,  r_condition, start, end) %>% 
-  tidyr::complete(nesting(r_file_name, r_condition), nesting(pg_protein_accessions, gene_names, fg_id, eg_modified_peptide, pep_stripped_sequence, start, end))
-
-df <- df %>%
-  mutate(imputed = if_else(is.na(normalised_intensity_log2), TRUE, FALSE))
+  distinct(r_file_name, fg_id, normalised_intensity_log2, eg_modified_peptide, pep_stripped_sequence, pg_protein_accessions,  r_condition) %>% 
+  tidyr::complete(nesting(r_file_name, r_condition), nesting(pg_protein_accessions, fg_id, eg_modified_peptide, pep_stripped_sequence))
 
 df %<>% impute_randomforest(
   sample = r_file_name,
   grouping = fg_id,
   intensity_log2 = normalised_intensity_log2,
   retain_columns = c("eg_modified_peptide", "pep_stripped_sequence", "pg_protein_accessions",
-                     "gene_names", "r_condition", "start", "end", "imputed",
+                      "r_condition", "start", "end", "imputed",
                      "coverage", "length"),
   parallelize = "variables"
 )
 
 imputed_file <- file.path(group_folder_path, paste0("imputed.tsv"))
 write.table(df, imputed_file, sep = "\t", row.names= FALSE, quote = FALSE)
-save.image("./all_data.RData")
 
 plot_list[[12]] <- df %>%
   dplyr::mutate(imputed = factor(imputed, levels = c(TRUE, FALSE), labels = c("Imputed", "Observed"))) %>%
@@ -243,6 +257,18 @@ plot_list[[12]] <- df %>%
   theme_bw() + 
   coord_cartesian(xlim = c(5, 30))
 
+# ------------------------------------------------------------------------------
+# Save QC plots
+# ------------------------------------------------------------------------------
+
+output_qc_pdf <- file.path(group_folder_path, "qc_plots.pdf")
+ggsave(
+  filename = output_qc_pdf, 
+  plot = marrangeGrob(plot_list, nrow=1, ncol=1), 
+  width = 8, height = 6
+)
+rm(plot_list, uniprot)
+gc()
 
 # sum up precursors to peptide level and keep only one entry per pep_stripped_sequence
 df %<>% protti::calculate_protein_abundance(
@@ -254,24 +280,13 @@ df %<>% protti::calculate_protein_abundance(
   min_n_peptides = 1,
   method = "sum",
   for_plot = FALSE,
-  retain_columns = c("pg_protein_accessions",
-                     "gene_names",  "r_condition", "start", "end")
+  retain_columns = c("pg_protein_accessions", "r_condition", "start", "end", "coverage")
 )
 
 dia_clean_file <- file.path(group_folder_path, paste0("dia_clean_uniprot.tsv"))
 write.table(df, dia_clean_file, sep = "\t", row.names= FALSE, quote = FALSE)
 
-# ------------------------------------------------------------------------------
-# Save QC plots
-# ------------------------------------------------------------------------------
 
-# Save QC plots
-output_qc_pdf <- file.path(group_folder_path, "qc_plots.pdf")
-ggsave(
-  filename = output_qc_pdf, 
-  plot = marrangeGrob(plot_list, nrow=1, ncol=1), 
-  width = 8, height = 6
-)
 
 # ------------------------------------------------------------------------------
 # TRYPTIC CONTROL
@@ -281,10 +296,39 @@ ggsave(
 if (!is.null(input_file_tryptic_control)) {
   
   input_file_tryptic_control <- params$input_file_tryptic_control
-  df_tryptic <- protti::read_protti(input_file_tryptic_control)
-  df_tryptic$intensity_log2 <- log2(df_tryptic$fg_ms2raw_quantity)
-  df_tryptic$condrep <- paste(df_tryptic$r_condition, df_tryptic$r_replicate, sep = "_")
   
+  df_tryptic <- read_file(input_file_tryptic_control) %>%
+    dplyr::mutate(
+      pg_protein_accessions_split = ifelse(base::grepl(";", pg_protein_accessions, fixed = FALSE), 
+      base::sort(base::strsplit(pg_protein_accessions, ";", fixed = TRUE)[[1]])[1], pg_protein_accessions)) %>%
+      dplyr::mutate(intensity_log2 = log2(fg_ms2raw_quantity)) %>%
+      dplyr::mutate(condrep = paste(r_condition, r_replicate, sep = "_"))
+  
+  ids <- df_tryptic %>% pull(pg_protein_accessions_split) %>% unique()
+  uniprot <-
+    protti::fetch_uniprot(
+      ids,
+      columns = c("length", "sequence")) 
+  
+  df_tryptic %<>%
+    dplyr::left_join(uniprot, by = c("pg_protein_accessions_split" = "accession")) %>%
+    protti::find_peptide(sequence, pep_stripped_sequence) %>%
+    protti::assign_peptide_type(aa_before, last_aa, aa_after) %>%
+    distinct() %>% 
+    protti::calculate_sequence_coverage(
+      protein_sequence = sequence, 
+      peptides = pep_stripped_sequence
+    ) %>% 
+    dplyr::mutate(imputed = if_else(is.na(intensity_log2), TRUE, FALSE)) %>%
+    dplyr::filter(intensity_log2 > 10) %>% 
+    protti::normalise(
+      sample = r_file_name,
+      intensity_log2 = intensity_log2,
+      method = "median"
+    ) %>% 
+    dplyr::mutate(normalised_intensity = 2^normalised_intensity_log2) %>%
+    dplyr::mutate(fg_id = paste0(fg_labeled_sequence,fg_charge))
+
   # make the QC plots as for LiP
   plot_list2[[1]] <- protti::qc_ids(
     data = df_tryptic, 
@@ -292,7 +336,7 @@ if (!is.null(input_file_tryptic_control)) {
     grouping = pep_grouping_key, 
     condition = r_condition, 
     intensity = fg_quantity
-  )+ ggtitle('Tryptic control: Precursor ID count per sample')
+  ) + ggtitle('Tryptic control: Precursor ID count per sample')
   
   plot_list2[[2]] <- protti::qc_ids(
     data = df_tryptic, 
@@ -300,14 +344,7 @@ if (!is.null(input_file_tryptic_control)) {
     grouping = pg_protein_accessions, 
     condition = r_condition, 
     intensity = pg_quantity
-  )+ ggtitle('Tryptic control: Protein ID count per sample')
-  
-  # Preprocess tryptic control data  
-  df_tryptic %<>% protti::normalise(
-    sample = r_file_name,
-    intensity_log2 = intensity_log2,
-    method = "median"
-  )
+  ) + ggtitle('Tryptic control: Protein ID count per sample')
   
   plot_list2[[3]] <- protti::qc_intensity_distribution(
     data = df_tryptic,
@@ -324,21 +361,6 @@ if (!is.null(input_file_tryptic_control)) {
     intensity_log2 = normalised_intensity_log2,
     plot_style = "boxplot"
   ) + ggtitle('Tryptic control: Run intensities after normalisation')
-  
-  df_tryptic %<>%
-    dplyr::filter(intensity_log2 > 10) %>% 
-    dplyr::rowwise() %>% 
-    dplyr::ungroup() %>% 
-    dplyr::mutate(normalised_intensity = 2^normalised_intensity_log2)
-  
-  df_tryptic$fg_id <- paste0(df_tryptic$fg_labeled_sequence, df_tryptic$fg_charge)
-  
-  df_tryptic %<>%
-    find_peptide(sequence, pep_stripped_sequence) %>%
-    assign_peptide_type(aa_before, last_aa, aa_after) %>%
-    distinct() %>% 
-    calculate_sequence_coverage(protein_sequence = sequence, peptides = pep_stripped_sequence) %>%
-    mutate(condrep = paste(r_condition, r_replicate, sep = "_"))
   
   plot_list2[[5]] <- protti::qc_cvs(
     data = df_tryptic,
@@ -395,12 +417,11 @@ if (!is.null(input_file_tryptic_control)) {
   ) + ggtitle('Tryptic control: intensity of half tryptics')
   
   df_tryptic %<>%
-    distinct(r_file_name, fg_id, normalised_intensity_log2, eg_modified_peptide, pep_stripped_sequence, pg_protein_accessions, gene_names, r_condition, start, end, condrep) %>% 
+    distinct(r_file_name, fg_id, normalised_intensity_log2, eg_modified_peptide, pep_stripped_sequence, pg_protein_accessions, r_condition, condrep) %>% 
     tidyr::complete(
       nesting(r_file_name, r_condition, condrep), 
-      nesting(pg_protein_accessions, gene_names, fg_id, eg_modified_peptide, pep_stripped_sequence, start, end)
+      nesting(pg_protein_accessions, fg_id, eg_modified_peptide, pep_stripped_sequence)
     )
-  
 
   # calculate protein abundance
   df_tryptic %<>% calculate_protein_abundance(
@@ -411,14 +432,9 @@ if (!is.null(input_file_tryptic_control)) {
     intensity_log2 = normalised_intensity_log2,
     method = "iq",
     for_plot = FALSE,
-    retain_columns = c("pg_protein_accessions",
-                       "gene_names", "r_condition", "condrep")
+    retain_columns = c("pg_protein_accessions", "r_condition", "condrep", "eg_modified_peptide")
   )
   
-  df_tryptic %<>%
-    dplyr::mutate(pg_protein_accessions_split = ifelse(base::grepl(";", pg_protein_accessions, fixed = FALSE), 
-                                                base::sort(base::strsplit(pg_protein_accessions, ";", fixed = TRUE)[[1]])[1], pg_protein_accessions)) 
-
   write.table(df_tryptic, file.path(group_folder_path, "tryptic_control_clean.tsv"), sep = "\t", row.names= FALSE, quote = FALSE)
   
   ## Principal component analysis (PCA)
@@ -446,7 +462,9 @@ if (!is.null(input_file_tryptic_control)) {
     plot = marrangeGrob(plot_list2, nrow=1, ncol=1), 
     width = 8, height = 6
   )
-  
+  rm(plot_list2, uniprot)
+  gc()
+ 
 }
 
 
@@ -468,8 +486,7 @@ for (i in seq_along(comparisons)) {
       intensity = normalised_intensity_log2,
       ref_condition = ref_condition,
       retain_columns = all_of(c("pg_protein_accessions","r_file_name", "r_condition", 
-                                "normalised_intensity_log2", "gene_names",
-                                "start", "end")))%>%
+                                "normalised_intensity_log2")))%>%
     protti::calculate_diff_abundance(
       sample = r_file_name,
       condition = r_condition,
@@ -479,8 +496,7 @@ for (i in seq_along(comparisons)) {
       comparison = comparison,
       method = "t-test",
       retain_columns = all_of(c("pg_protein_accessions","eg_modified_peptide", 
-                                "gene_names",
-                                "comparison", "start", "end"))
+                                "comparison"))
     )
   
 
@@ -490,6 +506,9 @@ for (i in seq_along(comparisons)) {
     comparison_parts_tryptic <- gsub("LiP", "TrP", comparison_parts_tryptic)
     
     df_trp_filtered <- df_tryptic %>%
+      dplyr::mutate(
+        pg_protein_accessions_split = ifelse(base::grepl(";", pg_protein_accessions, fixed = FALSE), 
+         base::sort(base::strsplit(pg_protein_accessions, ";", fixed = TRUE)[[1]])[1], pg_protein_accessions))  %>% 
       dplyr::filter(r_condition %in% comparison_parts_tryptic) %>%
       dplyr::distinct(pg_protein_accessions_split, r_file_name, r_condition, .keep_all = TRUE)
     
@@ -500,9 +519,9 @@ for (i in seq_along(comparisons)) {
         intensity = normalised_intensity_log2,
         grouping =  pg_protein_accessions,
         ref_condition = ref_condition_tryptic,
-        retain_columns = all_of(c("pg_protein_accessions","pg_protein_accessions_split","r_file_name", "r_condition", 
-                                  "normalised_intensity_log2", "gene_names",
-                                  "start", "end", "eg_modified_peptide"))
+        retain_columns = all_of(c("pg_protein_accessions","r_file_name", "r_condition", 
+                                  "normalised_intensity_log2", "pg_protein_accessions_split",
+                                   "eg_modified_peptide"))
       ) %>%
       calculate_diff_abundance(
         sample = r_file_name,
@@ -511,9 +530,9 @@ for (i in seq_along(comparisons)) {
         intensity_log2 = normalised_intensity_log2,
         comparison = comparison,
         method = "t-test",
-        retain_columns = all_of(c("pg_protein_accessions","pg_protein_accessions_split","r_file_name", "r_condition", 
-                                  "normalised_intensity_log2", "gene_names",
-                                  "start", "end", "eg_modified_peptide"))
+        retain_columns = all_of(c("pg_protein_accessions","r_file_name", "r_condition", 
+                                  "normalised_intensity_log2", 
+                                  "pg_protein_accessions_split", "eg_modified_peptide"))
       )
     
     # Save Differential Abundance results
@@ -524,31 +543,13 @@ for (i in seq_along(comparisons)) {
     write.table( df_trp_filtered_diff, diff_trp_file_path, sep = "\t", row.names= FALSE, quote = FALSE)
     
     # perform TrP protein correction on LiP:
-    Trp_candidates <- df_trp_filtered_diff %>% 
-      dplyr::mutate(pg_protein_accessions_split = ifelse(base::grepl(";", pg_protein_accessions, fixed = FALSE), 
-                                                    base::sort(base::strsplit(pg_protein_accessions, ";", fixed = TRUE)[[1]])[1], pg_protein_accessions))  %>% 
-      dplyr::filter(adj_pval < 0.05 & abs(diff) > 1) %>% 
-      left_join(dplyr::distinct(df_tryptic, pg_protein_accessions_split), by = "pg_protein_accessions_split") %>% 
-      rowwise() %>% 
-      dplyr::mutate(gene = ifelse(
-        is.na(gene_names) | gene_names == "", 
-        NA_character_, 
-        sort(strsplit(gene_names, " ", fixed = TRUE)[[1]])[1]
-      )) %>% 
-      ungroup() %>% 
-      dplyr::mutate(significant = TRUE)
-    
     df_trp_filtered_diff %<>%
-      left_join(distinct(Trp_candidates, pg_protein_accessions_split, significant, gene), by = "pg_protein_accessions_split") %>% 
-      left_join(dplyr::distinct(df_tryptic, pg_protein_accessions_split), by = "pg_protein_accessions_split")
-    
-    
-    df_trp_filtered_diff %<>%
-      rowwise() %>% 
-      dplyr::mutate(comparison = gsub("_TrP", "_LiP", x = comparison, fixed = TRUE)) %>% 
-      ungroup()
-    
-
+      dplyr::mutate(
+        pg_protein_accessions_split = ifelse(base::grepl(";", pg_protein_accessions, fixed = FALSE), 
+        base::sort(base::strsplit(pg_protein_accessions, ";", fixed = TRUE)[[1]])[1], pg_protein_accessions)) %>%
+      dplyr::mutate(Trp_candidates = adj_pval < 0.05 & abs(diff) > 1) %>%
+      dplyr::mutate(comparison = gsub("_TrP", "_LiP", x = comparison, fixed = TRUE)) 
+  
     df_diff <- protti::correct_lip_for_abundance(
       lip_data = df_diff,
       trp_data =  df_trp_filtered_diff,
@@ -562,8 +563,6 @@ for (i in seq_along(comparisons)) {
       retain_columns = all_of(c("missingness")),
       method = "satterthwaite"
     )
- 
-  
   }
   
   diff_abundance_file <- file.path(
@@ -602,6 +601,7 @@ for (i in seq_along(comparisons)) {
     )) %>%
     dplyr::left_join(uniprot, by = c("pg_protein_accessions_split" = "accession"))
   
+
   tryCatch({
     go_terms <- c("go_f", "go_p", "go_c")
     
