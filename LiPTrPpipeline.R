@@ -569,7 +569,7 @@ for (i in seq_along(comparisons)) {
     group_folder_path, 
     paste0("differential_abundance_", experiment_id, "_", comparison_filter, ".tsv")
   )
-  write.table(df_diff, diff_abundance_file, sep = "\t", row.names= FALSE, quote = FALSE)
+  write.table(joined, diff_abundance_file, sep = "\t", row.names= FALSE, quote = FALSE)
   
   unis <- df_diff %>%
     dplyr::mutate(pg_protein_accessions_split = ifelse(base::grepl(";", pg_protein_accessions, fixed = FALSE), 
@@ -636,3 +636,10 @@ file.copy(yaml_file, yaml_file_path)
 
 if (sink.number() > 0) sink(NULL)
 closeAllConnections()
+
+#joined <-df %>%
+#  dplyr::select(coverage, end, start, eg_modified_peptide) %>%
+#  dplyr::left_join(
+#  df_diff, 
+#  by = "eg_modified_peptide"
+#)
