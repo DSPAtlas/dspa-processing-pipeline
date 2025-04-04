@@ -224,9 +224,15 @@ plot_list[[11]] <- protti::qc_sample_correlation(
 )[[4]]
 
 
+# ------------------------------------------------------------------------------
+# Impute
+# ------------------------------------------------------------------------------
+
 df %<>% 
-  distinct(r_file_name, fg_id, normalised_intensity_log2, eg_modified_peptide, pep_stripped_sequence, pg_protein_accessions,  r_condition) %>% 
-  tidyr::complete(nesting(r_file_name, r_condition), nesting(pg_protein_accessions, fg_id, eg_modified_peptide, pep_stripped_sequence))
+  distinct(r_file_name, fg_id, normalised_intensity_log2, eg_modified_peptide, pep_stripped_sequence, pg_protein_accessions,  r_condition, start, end, coverage, length) %>% 
+  tidyr::complete(nesting(r_file_name, r_condition), nesting(pg_protein_accessions, fg_id, eg_modified_peptide, pep_stripped_sequence)) %>%
+  dplyr::mutate(imputed = is.na(normalised_intensity_log2)
+  )
 
 df %<>% impute_randomforest(
   sample = r_file_name,
