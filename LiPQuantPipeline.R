@@ -317,8 +317,9 @@ for (i in seq_along(comparisons)) {
       grouping = eg_modified_peptide,
       intensity = normalised_intensity_log2,
       ref_condition = "CTR_LiP",
-      retain_columns = all_of(c("pg_protein_accessions","r_file_name", "r_condition", 
-                                "normalised_intensity_log2")))%>%
+      retain_columns = all_of(c("eg_modified_peptide", "pep_stripped_sequence", "pg_protein_accessions",
+                                "r_condition", "start", "end", "imputed",
+                                "coverage", "length")))%>%
     protti::calculate_diff_abundance(
       sample = r_file_name,
       condition = r_condition,
@@ -327,8 +328,9 @@ for (i in seq_along(comparisons)) {
       missingness = missingness,
       comparison = comparison,
       method = "t-test",
-      retain_columns = all_of(c("pg_protein_accessions","eg_modified_peptide", 
-                                "comparison"))
+      retain_columns = all_of(c("eg_modified_peptide", "pep_stripped_sequence", "pg_protein_accessions",
+                                "r_condition", "start", "end", "imputed",
+                                "coverage", "length"))
     )
   
   diff_abundance_file <- file.path(
@@ -372,7 +374,7 @@ for (i in seq_along(comparisons)) {
     go_terms <- c("go_f", "go_p", "go_c")
     
     # Loop over the GO terms and combine results into a single data frame
-    df_go_term <- purr::map_dfr(go_terms, function(go_col) {
+    df_go_term <- purrr::map_dfr(go_terms, function(go_col) {
       joined_df %>%
         dplyr::mutate(significant = ifelse(!is.na(adj_pval) & adj_pval < 0.05, TRUE, FALSE)) %>%
         protti::calculate_go_enrichment(
@@ -434,6 +436,21 @@ lipquant_results <- protti::parallel_fit_drc_4p(
 lipquant_output_file <- file.path(group_folder_path, "lipquant_results.csv")
 write.csv(lipquant_results, lipquant_output_file)
 
+plot_curve_df <- lipquant_results %>%
+  dplyr::mutate(row_id = row_number()) %>%
+  dplyr::select(eg_modified_peptide, plot_curve) %>%
+  tidyr::unnest(cols = c(plot_curve))
+
+output_file <- file.path(group_folder_path, "lipquant_plot_curve.csv")
+write.csv(plot_curve_df, output_file)
+
+plot_points_df <- lipquant_results %>%
+  dplyr::mutate(row_id = row_number()) %>%
+  dplyr::select(eg_modified_peptide, plot_points) %>%
+  tidyr::unnest(cols = c(plot_points))
+
+output_file <- file.path(group_folder_path, "lipquant_plot_points.csv")
+write.csv(plot_points_df, output_file)
 
 lipquant_plots <- protti::plot_drc_results(
   lipquant_results,
