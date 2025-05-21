@@ -570,6 +570,11 @@ for (i in seq_along(comparisons)) {
       method = "satterthwaite"
     )
   }
+  df_diff <- df_diff %>%
+    left_join(df %>%
+                select(eg_modified_peptide, start, end) %>%
+                distinct(eg_modified_peptide, .keep_all = TRUE),
+              by = "eg_modified_peptide")
   
   diff_abundance_file <- file.path(
     group_folder_path, 
