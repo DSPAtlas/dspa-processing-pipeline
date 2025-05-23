@@ -580,7 +580,7 @@ for (i in seq_along(comparisons)) {
     group_folder_path, 
     paste0("differential_abundance_", experiment_id, "_", comparison_filter, ".tsv")
   )
-  write.table(joined, diff_abundance_file, sep = "\t", row.names= FALSE, quote = FALSE)
+  write.table(df_diff, diff_abundance_file, sep = "\t", row.names= FALSE, quote = FALSE)
   
   unis <- df_diff %>%
     dplyr::mutate(pg_protein_accessions_split = ifelse(base::grepl(";", pg_protein_accessions, fixed = FALSE), 
