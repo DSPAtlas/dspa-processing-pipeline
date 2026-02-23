@@ -597,8 +597,7 @@ for (i in seq_along(comparisons)) {
                                 adj_pval = adj_pval,
                                 start_position = start, 
                                 end_position = end,
-                                method = "additive", 
-                                normalize_scores = TRUE)  %>%
+                                method = "additive")  %>%
   dplyr::arrange(pg_protein_accessions, residue)
   
   aa_score_file <- file.path(
