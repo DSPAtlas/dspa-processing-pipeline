@@ -9,6 +9,8 @@ treatment: "Fructose 1,6-bisphosphate (FBP)"
 output_dir: "./preprocessed"
 ref_condition: "CTR_LiP"
 ref_condition_trp: ""
+ref_string:: "LiP"
+ref_string_trp: ""
 taxonomy_id: 562
 comparison: 
   - "FBP_1mM_vs_CTR_LiP"
