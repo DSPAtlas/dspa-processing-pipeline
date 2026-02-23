@@ -35,6 +35,14 @@ ref_condition <- params$ref_condition
 comparisons <- params$comparison
 output_dir <- params$output_dir
 
+#defensive implementaiton that enables sourcing reference strings in params file, 
+#otherwise default to old solution
+ref_string <- params$ref_string
+if (is.null(ref_string)) ref_string <- "LiP"
+ref_string_trp <- params$ref_string_trp
+if (is.null(ref_string_trp)) ref_string_trp <- "TrP"
+
+
 group_folder_path <- file.path(output_dir, group_id)
 
 if (!dir.exists(output_dir)) {
@@ -103,7 +111,7 @@ df %<>%
     by = c("pg_protein_accessions_split" = "accession")
   ) %>%
   protti::find_peptide(sequence, pep_stripped_sequence) %>%
-  protti::assign_peptide_type(aa_before, last_aa, aa_after) %>%
+  protti::assign_peptide_type(aa_before, last_aa, aa_after, pg_protein_accessions) %>%
   dplyr::distinct() %>% 
   protti::calculate_sequence_coverage(
     protein_sequence = sequence, 
@@ -248,17 +256,13 @@ imputed_file <- file.path(group_folder_path, paste0("imputed.tsv"))
 write.table(df, imputed_file, sep = "\t", row.names= FALSE, quote = FALSE)
 
 plot_list[[12]] <- df %>%
-  dplyr::mutate(imputed = factor(imputed, levels = c(TRUE, FALSE), labels = c("Imputed", "Observed"))) %>%
-  ggplot(aes(x = normalised_intensity_log2, fill = imputed)) +
+  dplyr::mutate(imputed = factor(imputed.x, levels = c(TRUE, FALSE), labels = c("Imputed", "Observed"))) %>%
+  ggplot(aes(x = imputed_intensity, fill = imputed)) +
   labs(title = "Histogram of Intensities Before and After Imputation (Log2)",
        x = "Log2 Intensity",
        y = "Frequency",
        fill = "Type") +
-  geom_histogram(
-    binwidth = 0.5,
-    color = "black",
-    position = "identity"
-  ) +
+  geom_density() +
   scale_fill_manual(values = protti_colours[c(2, 1)]) +
   theme_bw() + 
   coord_cartesian(xlim = c(5, 30))
@@ -270,20 +274,19 @@ plot_list[[12]] <- df %>%
 output_qc_pdf <- file.path(group_folder_path, "qc_plots.pdf")
 ggsave(
   filename = output_qc_pdf, 
-  plot = marrangeGrob(plot_list, nrow=1, ncol=1), 
+  plot = marrangeGrob(plot_list, nrow=1, ncol=1),  
   width = 8, height = 6
 )
 rm(plot_list, uniprot)
 gc()
 
 # sum up precursors to peptide level and keep only one entry per pep_stripped_sequence
-df %<>% protti::calculate_protein_abundance(
+df %<>% protti::calculate_peptide_abundance(
   sample = r_file_name,
-  protein_id = eg_modified_peptide,
   precursor = fg_id,
   peptide = eg_modified_peptide,
-  intensity_log2 = normalised_intensity_log2,
-  min_n_peptides = 1,
+  intensity_log2 = imputed_intensity,
+  min_n_precursors = 1,
   method = "sum",
   for_plot = FALSE,
   retain_columns = c("pg_protein_accessions", "r_condition", "start", "end", "coverage")
@@ -291,8 +294,6 @@ df %<>% protti::calculate_protein_abundance(
 
 dia_clean_file <- file.path(group_folder_path, paste0("dia_clean_uniprot.tsv"))
 write.table(df, dia_clean_file, sep = "\t", row.names= FALSE, quote = FALSE)
-
-
 
 # ------------------------------------------------------------------------------
 # TRYPTIC CONTROL
@@ -319,7 +320,7 @@ if (!is.null(input_file_tryptic_control)) {
   df_tryptic %<>%
     dplyr::left_join(uniprot, by = c("pg_protein_accessions_split" = "accession")) %>%
     protti::find_peptide(sequence, pep_stripped_sequence) %>%
-    protti::assign_peptide_type(aa_before, last_aa, aa_after) %>%
+    protti::assign_peptide_type(aa_before, last_aa, aa_after, pg_protein_accessions) %>%
     distinct() %>% 
     protti::calculate_sequence_coverage(
       protein_sequence = sequence, 
@@ -489,15 +490,14 @@ for (i in seq_along(comparisons)) {
       sample = r_file_name,
       condition = r_condition,
       grouping = eg_modified_peptide,
-      intensity = normalised_intensity_log2,
+      intensity = imputed_intensity,
       ref_condition = ref_condition,
-      retain_columns = all_of(c("pg_protein_accessions","r_file_name", "r_condition", 
-                                "normalised_intensity_log2")))%>%
+      retain_columns = all_of(c("pg_protein_accessions","r_file_name", "r_condition")))%>%
     protti::calculate_diff_abundance(
       sample = r_file_name,
       condition = r_condition,
       grouping = eg_modified_peptide,
-      intensity_log2 = normalised_intensity_log2,
+      intensity_log2 = imputed_intensity,
       missingness = missingness,
       comparison = comparison,
       method = "t-test",
@@ -509,7 +509,7 @@ for (i in seq_along(comparisons)) {
   if (!is.null(input_file_tryptic_control)) {
     ref_condition_tryptic <- params$ref_condition_trp
     comparison_parts_tryptic <- strsplit(comparison_filter, "_vs_")[[1]] 
-    comparison_parts_tryptic <- gsub("LiP", "TrP", comparison_parts_tryptic)
+    comparison_parts_tryptic <- gsub(ref_string, ref_string_trp, comparison_parts_tryptic)
     
     df_trp_filtered <- df_tryptic %>%
       dplyr::mutate(
@@ -554,7 +554,7 @@ for (i in seq_along(comparisons)) {
         pg_protein_accessions_split = ifelse(base::grepl(";", pg_protein_accessions, fixed = FALSE), 
         base::sort(base::strsplit(pg_protein_accessions, ";", fixed = TRUE)[[1]])[1], pg_protein_accessions)) %>%
       dplyr::mutate(Trp_candidates = adj_pval < 0.05 & abs(diff) > 1) %>%
-      dplyr::mutate(comparison = gsub("_TrP", "_LiP", x = comparison, fixed = TRUE)) 
+      dplyr::mutate(comparison = gsub(ref_string_trp, ref_string, x = comparison, fixed = TRUE)) 
   
     df_diff <- protti::correct_lip_for_abundance(
       lip_data = df_diff,
@@ -570,17 +570,43 @@ for (i in seq_along(comparisons)) {
       method = "satterthwaite"
     )
   }
+  
+  #remove artefacts from imputation with NA start / end values
+  df_clean <- df %>%
+    group_by(eg_modified_peptide) %>%
+    summarise(
+      start = first(na.omit(start)),
+      end   = first(na.omit(end)),
+      .groups = "drop"
+    )
   df_diff <- df_diff %>%
-    left_join(df %>%
-                select(eg_modified_peptide, start, end) %>%
-                distinct(eg_modified_peptide, .keep_all = TRUE),
-              by = "eg_modified_peptide")
+    left_join(df_clean, by = "eg_modified_peptide")
+
   
   diff_abundance_file <- file.path(
     group_folder_path, 
     paste0("differential_abundance_", experiment_id, "_", comparison_filter, ".tsv")
   )
   write.table(df_diff, diff_abundance_file, sep = "\t", row.names= FALSE, quote = FALSE)
+  
+  aa_scores <- df_diff %>%
+    tidyr::drop_na() %>%
+    protti::calculate_aa_scores(
+                                protein = pg_protein_accessions, 
+                                diff = diff_pep,
+                                adj_pval = adj_pval,
+                                start_position = start, 
+                                end_position = end,
+                                method = "additive", 
+                                normalize_scores = TRUE)  %>%
+  dplyr::arrange(pg_protein_accessions, residue)
+  
+  aa_score_file <- file.path(
+    group_folder_path, 
+    paste0("aa_scores_", experiment_id, "_", comparison_filter, ".tsv")
+  )
+  write.table(aa_scores, aa_score_file, sep = "\t", row.names= FALSE, quote = FALSE)
+  
   
   unis <- df_diff %>%
     dplyr::mutate(pg_protein_accessions_split = ifelse(base::grepl(";", pg_protein_accessions, fixed = FALSE), 
