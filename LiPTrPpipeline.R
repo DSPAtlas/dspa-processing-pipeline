@@ -556,6 +556,12 @@ for (i in seq_along(comparisons)) {
       dplyr::mutate(Trp_candidates = adj_pval < 0.05 & abs(diff) > 1) %>%
       dplyr::mutate(comparison = gsub(ref_string_trp, ref_string, x = comparison, fixed = TRUE)) 
   
+    diff_abundance_file <- file.path(
+      group_folder_path, 
+      paste0("differential_abundance_uncorrected_", experiment_id, "_", comparison_filter, ".tsv")
+    )
+    write.table(df_diff, diff_abundance_file, sep = "\t", row.names= FALSE, quote = FALSE)
+    
     df_diff <- protti::correct_lip_for_abundance(
       lip_data = df_diff,
       trp_data =  df_trp_filtered_diff,
