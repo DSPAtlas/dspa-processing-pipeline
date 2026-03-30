@@ -1,6 +1,6 @@
 # ---- CONFIG ----
 yaml_dir <- "../yaml_files_sanitized"
-script_path <- "../dspa-processing-pipeline/LiPTrPpipeline_test.R"
+script_path <- "../dspa-processing-pipeline/LiPTrPpipeline.R"
 max_jobs <- 10
 
 # ---- SETUP ----
