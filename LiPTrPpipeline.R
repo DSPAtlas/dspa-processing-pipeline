@@ -481,18 +481,15 @@ if (!is.null(input_file_tryptic_control)) {
 
 }
 
+plot_list_volcanos <- list()
 
 for (i in seq_along(comparisons)) {
   comparison_filter <- comparisons[[i]]
   experiment_id <- experiment_ids[[i]]
-  print("STAGE A")
   comparison_parts <- strsplit(comparison_filter, "_vs_")[[1]]
 
   df_filtered <- df %>%
     dplyr::filter(r_condition %in% comparison_parts)
-
-  print("STAGE B")
-  print(dim(df_filtered))
 
   df_diff <- df_filtered  %>%
     unique() %>%
@@ -514,7 +511,6 @@ for (i in seq_along(comparisons)) {
       retain_columns = all_of(c("pg_protein_accessions","eg_modified_peptide",
                                 "comparison"))
     )
-  print("STAGE C")
 
   if (!is.null(input_file_tryptic_control)) {
     ref_condition_tryptic <- tolower(params$ref_condition_trp)
@@ -623,6 +619,13 @@ for (i in seq_along(comparisons)) {
   )
   write.table(aa_scores, aa_score_file, sep = "\t", row.names= FALSE, quote = FALSE)
 
+  plot_list_volcanos[[i]] <- protti::volcano_plot(data = df_diff,
+                       log2FC = !!rlang::sym(diff_col),
+                       grouping = eg_modified_peptide,
+                       significance = adj_pval,
+                       method = "significant",
+                       significance_cutoff = 0.05,
+                       title = paste0("diff_", experiment_id, "_", comparison_filter))
 
   unis <- df_diff %>%
     dplyr::mutate(pg_protein_accessions_split = ifelse(base::grepl(";", pg_protein_accessions, fixed = FALSE),
@@ -682,6 +685,14 @@ for (i in seq_along(comparisons)) {
 
 }
 
+
+# Save Volcano plots
+output_qc_pdf <- file.path(group_folder_path, "volcano_plots_diff.pdf")
+ggsave(
+  filename = output_qc_pdf,
+  plot = marrangeGrob(plot_list_volcanos, nrow=1, ncol=1),
+  width = 8, height = 8
+)
 
 # copy yaml file into the output as well
 yaml_file_path <- file.path(group_folder_path, "params.yaml")
