@@ -1,5 +1,5 @@
 # ---- CONFIG ----
-yaml_dir <- "../yaml_files_sanitized"
+yaml_dir <- "../yamlfiles"
 script_path <- "../dspa-processing-pipeline/LiPTrPpipeline.R"
 max_jobs <- 10
 
