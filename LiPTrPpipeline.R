@@ -131,6 +131,12 @@ df %<>%
     uniprot,
     by = c("pg_protein_accessions_split" = "accession")
   ) %>%
+  dplyr::filter(
+    !is.na(sequence),
+    !is.na(pep_stripped_sequence),
+    pep_stripped_sequence != "",
+    stringr::str_detect(sequence, stringr::fixed(pep_stripped_sequence))
+  ) %>%
   protti::find_peptide(sequence, pep_stripped_sequence) %>%
   protti::assign_peptide_type(aa_before, last_aa, aa_after, pg_protein_accessions) %>%
   dplyr::distinct() %>%
