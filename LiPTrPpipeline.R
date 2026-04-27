@@ -120,6 +120,7 @@ uniprot <-
 # ------------------------------------------------------------------------------
 
 log_info("Normalise:")
+log_info("Df size before normalise / filter:", nrow(df))
 
 df %<>%
   protti::normalise(
@@ -149,6 +150,8 @@ df %<>%
   dplyr::filter(intensity_log2 > 10) %>%
   dplyr::mutate(fg_id =paste0(fg_labeled_sequence, fg_charge)) %>%
   dplyr::mutate(normalised_intensity = 2^normalised_intensity_log2)
+
+log_info("Df size after normalise / filtering:", nrow(df))
 
 # ------------------------------------------------------------------------------
 # Plotting
