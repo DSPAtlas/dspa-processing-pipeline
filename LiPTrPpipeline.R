@@ -36,9 +36,12 @@ ref_condition <- tolower(params$ref_condition)
 comparisons <- lapply(params$comparison, tolower)
 output_dir <- params$output_dir
 
-#defensive implementaiton that enables sourcing reference strings in params file,
-ref_string <- "lip"
-ref_string_trp <- "trp"
+#defensive implementation that enables sourcing reference strings in params file,
+#otherwise default to old solution
+ref_string <- params$ref_string
+if (is.null(ref_string)) ref_string <- "lip"
+ref_string_trp <- params$ref_string_trp
+if (is.null(ref_string_trp)) ref_string_trp <- "trp"
 
 
 group_folder_path <- file.path(output_dir, group_id)
@@ -536,19 +539,26 @@ if (!is.null(input_file_tryptic_control)) {
   rm(plot_list2, uniprot)
   gc()
 
+  log_info("Found following group in Trp Dataframe:", unique(df_tryptic$r_condition))
 }else{
   log_info("No Tryptic Control included")
 }
 
 plot_list_volcanos <- list()
 
-log_info("Found following group in Dataframe:", unique(df$r_condition))
+log_info("Found following group in Lip Dataframe:", unique(df$r_condition))
 for (i in seq_along(comparisons)) {
   comparison_filter <- comparisons[[i]]
   comparison_filter_sanitized <- gsub("/", "_", comparison_filter) # some conditions contain character '/', which will break file paths, so we have to defend
   experiment_id <- experiment_ids[[i]]
   comparison_parts <- strsplit(comparison_filter, "_vs_")[[1]]
-  log_info("Filtering data for comparison", comparison_filter, "\nIncluding:", comparison_parts)
+  log_info("Filtering Lip data for comparison", comparison_filter, "\nIncluding:", comparison_parts)
+
+  #Defensive implementation that enables getting references from a list (i.e if comparisons dont always have the same reference)
+  #needed for experiment nvolkmar_EX112
+  if (!is.null(params$ref_condition_per_comparison)){
+    ref_condition <- tolower(params$ref_condition_per_comparison[i])
+  }
 
   df_filtered <- df %>%
     dplyr::filter(r_condition %in% comparison_parts)
@@ -578,8 +588,15 @@ for (i in seq_along(comparisons)) {
 
   if (!is.null(input_file_tryptic_control)) {
     ref_condition_tryptic <- tolower(params$ref_condition_trp)
+    #Defensive implementation that enables getting references from a list (i.e if comparisons dont always have the same reference)
+    #needed for experiment nvolkmar_EX112
+    if (!is.null(params$ref_condition_trp_per_comparison)){
+      ref_condition_tryptic <- tolower(params$ref_condition_trp_per_comparison[i])
+    }
     comparison_parts_tryptic <- strsplit(comparison_filter, "_vs_")[[1]]
     comparison_parts_tryptic <- gsub(ref_string, ref_string_trp, comparison_parts_tryptic)
+    log_info("Filtering Trp data for comparison", comparison_filter, "\nIncluding:", comparison_parts_tryptic)
+
 
     df_trp_filtered <- df_tryptic %>%
       dplyr::mutate(
@@ -614,7 +631,7 @@ for (i in seq_along(comparisons)) {
     # Save Differential Abundance results
     diff_trp_file_path <- file.path(
       group_folder_path,
-      paste0("trp_differential_abundance_", experiment_ids, "_", comparisons, ".tsv")
+      paste0("trp_differential_abundance_", experiment_id, "_", comparison_filter_sanitized, ".tsv")
     )
     log_info("Writing differential abundace (triptic control):", diff_trp_file_path)
     write.table( df_trp_filtered_diff, diff_trp_file_path, sep = "\t", row.names= FALSE, quote = FALSE)
