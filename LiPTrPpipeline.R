@@ -388,13 +388,13 @@ if (!is.null(input_file_tryptic_control)) {
       peptides = pep_stripped_sequence
     ) %>%
     dplyr::mutate(imputed = if_else(is.na(intensity_log2), TRUE, FALSE)) %>%
-    dplyr::filter(intensity_log2 > 10) %>%
     protti::normalise(
       sample = r_file_name,
       intensity_log2 = intensity_log2,
       method = "median"
     ) %>%
     dplyr::mutate(normalised_intensity = 2^normalised_intensity_log2) %>%
+    dplyr::filter(intensity_log2 > 10) %>%
     dplyr::mutate(fg_id = paste0(fg_labeled_sequence,fg_charge))
 
   # make the QC plots as for LiP
@@ -689,8 +689,10 @@ for (i in seq_along(comparisons)) {
   write.table(df_diff, diff_abundance_file, sep = "\t", row.names= FALSE, quote = FALSE)
 
   diff_col <- if (is.null(input_file_tryptic_control)) "diff" else "adj_diff"
-  log_info("calculate AA scores, using diff column:", diff_col)
-  aa_scores <- df_diff %>%
+
+  #Additive AA score calcualation
+  log_info("calculate additive AA scores, using diff column:", diff_col)
+  aa_scores_add <- df_diff %>%
     tidyr::drop_na() %>%
     protti::calculate_aa_scores(
                                 protein = pg_protein_accessions,
@@ -700,14 +702,35 @@ for (i in seq_along(comparisons)) {
                                 end_position = end,
                                 method = "additive")  %>%
   dplyr::arrange(pg_protein_accessions, residue)
-  log_info("AA score counts:", nrow(aa_scores))
+  log_info("AA score counts (additive):", nrow(aa_scores_add))
 
-  aa_score_file <- file.path(
+  aa_score_add_file <- file.path(
     group_folder_path,
-    paste0("aa_scores_", experiment_id, "_", comparison_filter_sanitized, ".tsv")
+    paste0("aa_scores_add_", experiment_id, "_", comparison_filter_sanitized, ".tsv")
   )
-  log_info("Writing aa scores to:", aa_score_file)
-  write.table(aa_scores, aa_score_file, sep = "\t", row.names= FALSE, quote = FALSE)
+  log_info("Writing additive aa scores to:", aa_score_add_file)
+  write.table(aa_scores_add, aa_score_add_file, sep = "\t", row.names= FALSE, quote = FALSE)
+
+  #Multipicative AA score calcualation
+  log_info("calculate multiplicative AA scores, using diff column:", diff_col)
+  aa_scores_mult <- df_diff %>%
+    tidyr::drop_na() %>%
+    protti::calculate_aa_scores(
+      protein = pg_protein_accessions,
+      diff = !!rlang::sym(diff_col),
+      adj_pval = adj_pval,
+      start_position = start,
+      end_position = end,
+      method = "multiplicative")  %>%
+    dplyr::arrange(pg_protein_accessions, residue)
+  log_info("AA score counts (multiplicative):", nrow(aa_scores_mult))
+
+  aa_score_mult_file <- file.path(
+    group_folder_path,
+    paste0("aa_scores_mult_", experiment_id, "_", comparison_filter_sanitized, ".tsv")
+  )
+  log_info("Writing multiplicative aa scores to:", aa_score_mult_file)
+  write.table(aa_scores_mult, aa_score_mult_file, sep = "\t", row.names= FALSE, quote = FALSE)
 
   plot_list_volcanos[[i]] <- protti::volcano_plot(data = df_diff,
                        log2FC = !!rlang::sym(diff_col),
